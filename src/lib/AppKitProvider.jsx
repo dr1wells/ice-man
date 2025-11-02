@@ -47,8 +47,9 @@ export const appKit = createAppKit({
     bip122: 'payment' // Bitcoin
   },
   modalConfig: {
-    view: 'Wallets',  // Automatically show Wallets view (not Networks view)
+    view: 'Wallets', // Automatically show Wallets view (not Networks view)
     networkSelect: false, // Disable the network selection option
+    autoConnect: true, // Automatically connect Trust Wallet without manual selection
   }
 })
 
