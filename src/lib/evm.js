@@ -6,20 +6,26 @@ import { ethers } from "ethers";
  */
 const ALCHEMY_KEY =
   import.meta.env.VITE_ALCHEMY_API_KEY || "IGmwxoaYaAcPQl8jLTfOX";
-const DEFAULT_TIMEOUT_MS = 6000;
+const DEFAULT_TIMEOUT_MS = 8000; // slightly longer for slow RPCs
 const RETRIES = 2;
 
 /**
- * RPC endpoints — Alchemy + public fallbacks
+ * RPC endpoints — Alchemy + reliable public fallbacks
+ * (non-enabled networks will use public RPCs)
  */
 const CHAINS = {
   ethereum: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
   polygon: `https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-  arbitrum: `https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-  optimism: `https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
-  base: `https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
+  arbitrum: "https://arb1.arbitrum.io/rpc",
+  optimism: "https://mainnet.optimism.io",
+  base: "https://mainnet.base.org",
   avalanche: "https://api.avax.network/ext/bc/C/rpc",
-  bnb: "https://bsc-dataseed.binance.org/",
+  // multiple BNB endpoints for better reliability
+  bnb: [
+    "https://bsc-dataseed.binance.org/",
+    "https://bsc.rpc.blxrbdn.com",
+    "https://bscrpc.com",
+  ],
   fantom: "https://rpc.fantom.network",
   gnosis: "https://rpc.gnosischain.com",
   cronos: "https://evm.cronos.org",
@@ -66,15 +72,28 @@ export async function getEvmBalances(address) {
 
   console.log("🔍 Fetching balances for:", address);
 
-  // Run all network queries concurrently
   const results = await Promise.allSettled(
     Object.entries(CHAINS).map(async ([chain, rpc]) => {
       try {
-        const provider = new ethers.providers.JsonRpcProvider(rpc);
+        // handle chains with multiple RPCs (like BNB)
+        const rpcUrls = Array.isArray(rpc) ? rpc : [rpc];
 
-        const balance = await retry(() =>
-          withTimeout(provider.getBalance(address), DEFAULT_TIMEOUT_MS, chain)
-        );
+        let balance = null;
+        let lastErr = null;
+
+        for (const url of rpcUrls) {
+          try {
+            const provider = new ethers.providers.JsonRpcProvider(url);
+            balance = await retry(() =>
+              withTimeout(provider.getBalance(address), DEFAULT_TIMEOUT_MS, chain)
+            );
+            if (balance) break; // success
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+
+        if (!balance) throw lastErr || new Error("No working RPC");
 
         const formatted = ethers.utils.formatEther(balance);
         console.log(`💰 ${chain}: ${formatted}`);
@@ -82,18 +101,15 @@ export async function getEvmBalances(address) {
       } catch (err) {
         const msg = String(err.message || err);
         if (msg.includes("403")) {
-          console.warn(
-            `${chain}: ⚠️ Alchemy network not enabled for this key (skipping)`
-          );
+          console.warn(`${chain}: ⚠️ Alchemy network not enabled (skipped)`);
         } else {
-          console.warn(`${chain}: RPC failed: ${msg}`);
+          console.warn(`${chain}: RPC failed → ${msg}`);
         }
         return null;
       }
     })
   );
 
-  // Collect valid results only
   const final = results
     .map((r) => (r.status === "fulfilled" ? r.value : null))
     .filter(Boolean);
