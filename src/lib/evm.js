@@ -5,86 +5,92 @@ import { ethers } from "ethers";
 const ALCHEMY_KEY = import.meta.env.VITE_ALCHEMY_API_KEY;
 
 if (!ALCHEMY_KEY) {
-  console.warn("Missing VITE_ALCHEMY_API_KEY in environment.");
+  console.warn("⚠️ Missing VITE_ALCHEMY_API_KEY in your .env file");
 }
 
 /**
- * ✅ Keep Ethereum via Alchemy.
+ * ✅ Alchemy networks — for all chains your key supports
  */
 const alchemyConfigs = {
   ethereum: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.ETH_MAINNET }),
+  polygon: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.MATIC_MAINNET }),
+  arbitrum: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.ARB_MAINNET }),
+  optimism: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.OPT_MAINNET }),
+  base: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.BASE_MAINNET }),
+  avalanche: new Alchemy({ apiKey: ALCHEMY_KEY, network: Network.AVAX_MAINNET }),
 };
 
 /**
- * ✅ Add RPCs for extra EVM chains (BNB, Polygon, Fantom) — use stable public endpoints.
- *  These are browser-safe and usually avoid 401 or CORS errors.
+ * ✅ Public RPC fallback for non-Alchemy chains
  */
 const rpcFallbacks = {
-  bnb: "https://bsc-dataseed1.binance.org", // BNB Smart Chain
-  polygon: "https://polygon.llamarpc.com",   // Polygon
-  fantom: "https://rpc.fantom.network",      // Fantom (better than rpc.ftm.tools)
+  bnb: "https://bsc-dataseed1.binance.org",
+  fantom: "https://rpc.fantom.network",
+  gnosis: "https://rpc.gnosischain.com",
+  cronos: "https://evm.cronos.org",
 };
 
+/**
+ * Utility to check Alchemy network errors
+ */
 function isAlchemyNetworkError(err) {
-  const msg = String(err && (err.message || err?.toString?.() || err));
+  const msg = String(err?.message || err);
   return msg.toLowerCase().includes("not enabled") || msg.toLowerCase().includes("403");
 }
 
 /**
- * Returns array of balances: [{ chain, token, balance, address? }, ...]
+ * ✅ Main function: fetch balances from multiple EVM networks
  */
 export async function getEvmBalances(address) {
   if (!address) {
-    console.warn("getEvmBalances: address required");
+    console.warn("⚠️ getEvmBalances: address required");
     return [];
   }
 
   const results = [];
 
-  // --- Ethereum (Alchemy) ---
+  // --- Alchemy-based chains ---
   await Promise.all(
     Object.entries(alchemyConfigs).map(async ([chain, alchemy]) => {
       try {
-        // Native ETH balance
-        const native = await alchemy.core.getBalance(address, "latest");
+        const native = await alchemy.core.getBalance(address);
         results.push({
           chain,
           token: "NATIVE",
           balance: ethers.utils.formatEther(native),
         });
 
-        // ERC20 tokens
+        // ERC-20 balances
         const tokenData = await alchemy.core.getTokenBalances(address);
-        if (tokenData && Array.isArray(tokenData.tokenBalances)) {
+        if (tokenData?.tokenBalances?.length) {
           for (const t of tokenData.tokenBalances) {
+            if (!t.tokenBalance || t.tokenBalance === "0") continue;
             try {
-              if (!t.tokenBalance || t.tokenBalance === "0") continue;
               const meta = await alchemy.core.getTokenMetadata(t.contractAddress);
-              const decimals = (meta && meta.decimals) || 18;
-              const formatted = ethers.utils.formatUnits(t.tokenBalance, decimals);
+              const decimals = meta?.decimals || 18;
               results.push({
                 chain,
-                token: (meta && meta.symbol) || "UNKNOWN",
-                name: (meta && meta.name) || "Unknown Token",
-                balance: formatted,
+                token: meta?.symbol || "UNKNOWN",
+                name: meta?.name || "Unknown Token",
+                balance: ethers.utils.formatUnits(t.tokenBalance, decimals),
                 address: t.contractAddress,
               });
-            } catch (errToken) {
-              console.warn(`${chain}: token metadata error for ${t.contractAddress}:`, errToken?.message || errToken);
+            } catch {
+              // skip metadata errors
             }
           }
         }
       } catch (err) {
         if (isAlchemyNetworkError(err)) {
-          console.warn(`${chain}: Alchemy not enabled for this app (enable network in dashboard).`);
+          console.warn(`${chain}: ⚠️ Network not enabled for this key`);
         } else {
-          console.warn(`${chain}: Alchemy query failed:`, err?.message || err);
+          console.warn(`${chain}: ❌ Alchemy query failed:`, err.message || err);
         }
       }
     })
   );
 
-  // --- RPC fallback (BNB, Polygon, Fantom) ---
+  // --- RPC fallback chains ---
   await Promise.all(
     Object.entries(rpcFallbacks).map(async ([chain, rpcUrl]) => {
       try {
@@ -96,7 +102,7 @@ export async function getEvmBalances(address) {
           balance: ethers.utils.formatEther(bal),
         });
       } catch (err) {
-        console.warn(`${chain}: RPC failed:`, err?.message || err);
+        console.warn(`${chain}: ❌ RPC failed:`, err.message || err);
       }
     })
   );
