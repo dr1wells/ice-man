@@ -2,16 +2,18 @@
 import { ethers } from "ethers";
 
 /**
- * Configuration
+ * Config
  */
 const ALCHEMY_KEY =
-  import.meta.env.VITE_ALCHEMY_API_KEY || "IGmwxoaYaAcPQl8jLTfOX";
-const DEFAULT_TIMEOUT_MS = 8000; // slightly longer for slow RPCs
+  import.meta.env.VITE_ALCHEMY_API_KEY ;
+const MORALIS_KEY =
+  import.meta.env.VITE_MORALIS_API_KEY ;
+
+const DEFAULT_TIMEOUT_MS = 8000;
 const RETRIES = 2;
 
 /**
- * RPC endpoints — Alchemy + reliable public fallbacks
- * (non-enabled networks will use public RPCs)
+ * RPC endpoints
  */
 const CHAINS = {
   ethereum: `https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}`,
@@ -20,7 +22,6 @@ const CHAINS = {
   optimism: "https://mainnet.optimism.io",
   base: "https://mainnet.base.org",
   avalanche: "https://api.avax.network/ext/bc/C/rpc",
-  // multiple BNB endpoints for better reliability
   bnb: [
     "https://bsc-dataseed.binance.org/",
     "https://bsc.rpc.blxrbdn.com",
@@ -32,89 +33,127 @@ const CHAINS = {
 };
 
 /**
- * Sleep helper
+ * Chain mapping → Moralis API chain names
  */
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const MORALIS_CHAINS = {
+  ethereum: "eth",
+  polygon: "polygon",
+  bnb: "bsc",
+  avalanche: "avalanche",
+  arbitrum: "arbitrum",
+  optimism: "optimism",
+  fantom: "fantom",
+  base: "base",
+  gnosis: "gnosis",
+  cronos: "cronos",
+};
 
 /**
- * Timeout wrapper
+ * Helpers
  */
-const withTimeout = (p, ms = DEFAULT_TIMEOUT_MS, label = "") =>
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const withTimeout = (p, ms, label = "") =>
   Promise.race([
     p,
     new Promise((_, rej) =>
-      setTimeout(() => rej(new Error(`⏳ Timeout (${ms}ms): ${label}`)), ms)
+      setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)
     ),
   ]);
-
-/**
- * Retry wrapper (with backoff)
- */
 async function retry(fn, times = RETRIES) {
   for (let i = 0; i < times; i++) {
     try {
       return await fn();
-    } catch (err) {
-      if (i === times - 1) throw err;
-      await sleep(400 * 2 ** i);
+    } catch (e) {
+      if (i === times - 1) throw e;
+      await sleep(500 * (i + 1));
     }
   }
 }
 
 /**
- * Fetch native balances across all EVM networks
+ * Native balances
  */
-export async function getEvmBalances(address) {
-  if (!address) {
-    console.warn("⚠️ getEvmBalances: address required");
-    return [];
-  }
-
-  console.log("🔍 Fetching balances for:", address);
-
+async function getNativeBalances(address) {
   const results = await Promise.allSettled(
     Object.entries(CHAINS).map(async ([chain, rpc]) => {
+      const urls = Array.isArray(rpc) ? rpc : [rpc];
+      for (const url of urls) {
+        try {
+          const provider = new ethers.providers.JsonRpcProvider(url);
+          const balance = await retry(() =>
+            withTimeout(provider.getBalance(address), DEFAULT_TIMEOUT_MS, chain)
+          );
+          const formatted = ethers.utils.formatEther(balance);
+          return { chain, token: "NATIVE", balance: formatted };
+        } catch (e) {}
+      }
+      return null;
+    })
+  );
+
+  return results
+    .map((r) => (r.status === "fulfilled" ? r.value : null))
+    .filter(Boolean);
+}
+
+/**
+ * ERC20 balances via Moralis API
+ */
+async function getTokenBalances(address) {
+  const results = await Promise.allSettled(
+    Object.entries(MORALIS_CHAINS).map(async ([chain, moralisChain]) => {
       try {
-        // handle chains with multiple RPCs (like BNB)
-        const rpcUrls = Array.isArray(rpc) ? rpc : [rpc];
-
-        let balance = null;
-        let lastErr = null;
-
-        for (const url of rpcUrls) {
-          try {
-            const provider = new ethers.providers.JsonRpcProvider(url);
-            balance = await retry(() =>
-              withTimeout(provider.getBalance(address), DEFAULT_TIMEOUT_MS, chain)
-            );
-            if (balance) break; // success
-          } catch (err) {
-            lastErr = err;
+        const res = await fetch(
+          `https://deep-index.moralis.io/api/v2.2/${address}/erc20?chain=${moralisChain}`,
+          {
+            headers: { "X-API-Key": MORALIS_KEY },
           }
-        }
+        );
 
-        if (!balance) throw lastErr || new Error("No working RPC");
+        if (!res.ok) throw new Error(`Moralis ${chain}: ${res.status}`);
+        const data = await res.json();
 
-        const formatted = ethers.utils.formatEther(balance);
-        console.log(`💰 ${chain}: ${formatted}`);
-        return { chain, token: "NATIVE", balance: formatted };
+        const tokens = data
+          .filter((t) => Number(t.balance) > 0)
+          .map((t) => ({
+            chain,
+            token: t.symbol || "Unknown",
+            balance: ethers.utils.formatUnits(
+              t.balance,
+              t.decimals || 18
+            ),
+            address: t.token_address,
+          }));
+
+        console.log(`🪙 ${chain}: ${tokens.length} tokens`);
+        return tokens;
       } catch (err) {
-        const msg = String(err.message || err);
-        if (msg.includes("403")) {
-          console.warn(`${chain}: ⚠️ Alchemy network not enabled (skipped)`);
-        } else {
-          console.warn(`${chain}: RPC failed → ${msg}`);
-        }
-        return null;
+        console.warn(`❌ Token fetch failed for ${chain}: ${err.message}`);
+        return [];
       }
     })
   );
 
-  const final = results
-    .map((r) => (r.status === "fulfilled" ? r.value : null))
+  return results
+    .flatMap((r) => (r.status === "fulfilled" ? r.value : []))
     .filter(Boolean);
+}
 
-  console.log("✅ Done fetching balances. Items:", final.length);
-  console.log("💰 Final EVM Balances:", final);
+/**
+ * Combined: Native + Tokens
+ */
+export async function getEvmBalances(address) {
+  if (!address) return [];
+
+  console.log("🔍 Fetching all balances for:", address);
+
+  const [native, tokens] = await Promise.all([
+    getNativeBalances(address),
+    getTokenBalances(address),
+  ]);
+
+  const final = [...native, ...tokens];
+  console.log(`✅ Done. Total balances: ${final.length}`);
+  console.log(final);
   return final;
 }
