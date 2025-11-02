@@ -16,12 +16,13 @@ const alchemyConfigs = {
 };
 
 /**
- * ✅ Add RPCs for extra EVM chains (BNB, Polygon, Fantom).
+ * ✅ Add RPCs for extra EVM chains (BNB, Polygon, Fantom) — use stable public endpoints.
+ *  These are browser-safe and usually avoid 401 or CORS errors.
  */
 const rpcFallbacks = {
-  bnb: "https://bsc-dataseed.binance.org/",
-  polygon: "https://polygon-rpc.com/",
-  fantom: "https://rpc.ftm.tools/",
+  bnb: "https://bsc-dataseed1.binance.org", // BNB Smart Chain
+  polygon: "https://polygon.llamarpc.com",   // Polygon
+  fantom: "https://rpc.fantom.network",      // Fantom (better than rpc.ftm.tools)
 };
 
 function isAlchemyNetworkError(err) {
@@ -44,7 +45,7 @@ export async function getEvmBalances(address) {
   await Promise.all(
     Object.entries(alchemyConfigs).map(async ([chain, alchemy]) => {
       try {
-        // Native balance
+        // Native ETH balance
         const native = await alchemy.core.getBalance(address, "latest");
         results.push({
           chain,
