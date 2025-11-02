@@ -34,7 +34,7 @@ const metadata = {
   icons: ['https://raw.githubusercontent.com/twitter/twemoji/master/assets/svg/1f4b0.svg']
 }
 
-// 5) Create AppKit modal (no network selection, directly connecting wallet)
+// 5) Create AppKit modal
 export const appKit = createAppKit({
   adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   networks: [...evmNetworks, ...solNetworks, ...btcNetworks],
@@ -45,11 +45,6 @@ export const appKit = createAppKit({
     eip155: 'eoa',    // EVM
     solana: 'wallet', // Solana
     bip122: 'payment' // Bitcoin
-  },
-  modalConfig: {
-    view: 'Wallets', // Automatically show Wallets view (not Networks view)
-    networkSelect: false, // Disable the network selection option
-    autoConnect: true, // Automatically connect Trust Wallet without manual selection
   }
 })
 
@@ -57,7 +52,6 @@ export const appKit = createAppKit({
 export function openConnectModal() {
   appKit.open()
 }
-
 export function openNetworkModal() {
   appKit.open({ view: 'Networks' })
 }
