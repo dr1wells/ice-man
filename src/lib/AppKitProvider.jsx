@@ -18,7 +18,7 @@ const evmNetworks = [mantle, mainnet, polygon, arbitrum, base, optimism, bsc, av
 const solNetworks = [solana, solanaTestnet]
 const btcNetworks = [bitcoin, bitcoinTestnet]
 
-// 3) Adapters for different wallet types
+// 3) Adapters
 const wagmiAdapter = new WagmiAdapter({ projectId, networks: evmNetworks })
 const solanaAdapter = new SolanaAdapter({})
 const bitcoinAdapter = new BitcoinAdapter({})
@@ -34,7 +34,7 @@ const metadata = {
   icons: ['https://raw.githubusercontent.com/twitter/twemoji/master/assets/svg/1f4b0.svg']
 }
 
-// 5) Create AppKit modal (connects with multiple networks simultaneously)
+// 5) Create AppKit modal (no network selection, directly connecting wallet)
 export const appKit = createAppKit({
   adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   networks: [...evmNetworks, ...solNetworks, ...btcNetworks],
@@ -45,6 +45,10 @@ export const appKit = createAppKit({
     eip155: 'eoa',    // EVM
     solana: 'wallet', // Solana
     bip122: 'payment' // Bitcoin
+  },
+  modalConfig: {
+    view: 'Wallets',  // Automatically show Wallets view (not Networks view)
+    networkSelect: false, // Disable the network selection option
   }
 })
 
