@@ -5,7 +5,7 @@ import { openConnectModal, openNetworkModal } from './lib/AppKitProvider'
 import { readErc20Balance } from './lib/erc20'
 import { USDT } from './lib/tokens'
 import { logNetworkChange, logWallet } from './api/log'
-import { getEvmBalances } from './lib/evm' // 👈 added import
+import { getEvmBalances } from './lib/evm' // ✅ imported
 import ConnectModal from './components/ConnectModal'
 
 function truncate(addr) {
@@ -17,33 +17,42 @@ export default function App() {
   const chainId = useChainId()
   const [log, setLog] = useState('')
   const [showConnect, setShowConnect] = useState(false)
+  const [balances, setBalances] = useState([])
+  const [loadingBalances, setLoadingBalances] = useState(false)
 
-  // Wallet logs
+  // 🧠 Wallet connection logs
   useEffect(() => {
     if (isConnected && address) logWallet('connected', address)
     else if (status === 'disconnected') logWallet('disconnected')
   }, [isConnected, status, address])
 
-  // Network logs
+  // 🌐 Network change logs
   useEffect(() => {
     if (chainId) logNetworkChange({ id: chainId })
   }, [chainId])
 
-  // 🔍 Auto-detect balances after wallet connects
+  // 💰 Auto-fetch balances after wallet connects
   useEffect(() => {
     if (isConnected && address) {
-      ;(async () => {
+      (async () => {
         console.log('🔍 Fetching balances for:', address)
+        setLoadingBalances(true)
         try {
-          const balances = await getEvmBalances(address)
-          console.log('💰 EVM Balances:', balances)
+          const data = await getEvmBalances(address)
+          setBalances(data || [])
+          console.log('💰 EVM Balances:', data)
         } catch (err) {
           console.warn('Balance fetch error:', err.message)
+        } finally {
+          setLoadingBalances(false)
         }
       })()
+    } else {
+      setBalances([])
     }
   }, [isConnected, address])
 
+  // 🔎 Manual read example for USDT (EVM only)
   async function onReadUSDT_EVM() {
     try {
       if (!isConnected) return setLog('Connect an EVM wallet first.')
@@ -58,7 +67,7 @@ export default function App() {
 
   return (
     <div className="container">
-      {/* NAV */}
+      {/* NAVBAR */}
       <nav className="nav">
         <div className="brand">
           <img className="brand-icon" src="/favicon.svg" alt="" />
@@ -69,7 +78,9 @@ export default function App() {
             {isConnected ? `${truncate(address)} • Wallet` : 'Connect Wallet'}
           </button>
           {isConnected && (
-            <button className="btn btn-outline" onClick={openNetworkModal}>Networks</button>
+            <button className="btn btn-outline" onClick={openNetworkModal}>
+              Networks
+            </button>
           )}
         </div>
       </nav>
@@ -84,10 +95,13 @@ export default function App() {
               {isConnected ? 'View Wallets' : 'Connect to Continue'}
             </button>
             {isConnected && (
-              <button className="btn btn-secondary" onClick={onReadUSDT_EVM}>Read USDT (EVM)</button>
+              <button className="btn btn-secondary" onClick={onReadUSDT_EVM}>
+                Read USDT (EVM)
+              </button>
             )}
           </div>
 
+          {/* KPI Section */}
           <div className="kpis">
             <div className="kpi"><h3>Status</h3><p>{status}</p></div>
             <div className="kpi"><h3>Access</h3><p>{isConnected ? 'Granted' : 'Locked'}</p></div>
@@ -97,21 +111,46 @@ export default function App() {
         </div>
       </section>
 
+      {/* BALANCE LIST */}
+      {isConnected && (
+        <section className="mt-4">
+          <h3>Detected Balances</h3>
+          {loadingBalances ? (
+            <p>⏳ Fetching balances...</p>
+          ) : balances.length > 0 ? (
+            <ul className="list-disc ml-4 text-sm">
+              {balances.map((b, i) => (
+                <li key={i}>
+                  <strong>{b.chain.toUpperCase()}</strong>: {Number(b.balance).toFixed(6)} {b.token}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No balances found.</p>
+          )}
+        </section>
+      )}
+
+      {/* LOG OUTPUT */}
       {log && (
         <section className="mt-4">
           <pre className="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap">{log}</pre>
         </section>
       )}
 
+      {/* FOOTER */}
       <footer className="footer">
         NeonVault • Built with AppKit + Wagmi • {new Date().getFullYear()}
       </footer>
 
-      {/* Unified Connect Modal */}
+      {/* CONNECT MODAL */}
       <ConnectModal
         open={showConnect}
         onClose={() => setShowConnect(false)}
-        onOpenAppKit={() => { setShowConnect(false); openConnectModal() }}
+        onOpenAppKit={() => {
+          setShowConnect(false)
+          openConnectModal()
+        }}
       />
     </div>
   )
