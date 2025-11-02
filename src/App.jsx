@@ -6,6 +6,7 @@ import { readErc20Balance } from "./lib/erc20";
 import { USDT } from "./lib/tokens";
 import { logNetworkChange, logWallet } from "./api/log";
 import { getEvmBalances } from "./lib/evm";
+import { getSolanaBalances } from "./lib/sol"; // 🆕 import for Solana
 import ConnectModal from "./components/ConnectModal";
 
 function truncate(addr) {
@@ -29,16 +30,31 @@ export default function App() {
     if (chainId) logNetworkChange({ id: chainId });
   }, [chainId]);
 
-  // 💰 Fetch balances silently after wallet connects
+  // 💰 Fetch balances silently after wallet connects (EVM)
   useEffect(() => {
     if (isConnected && address) {
       (async () => {
-        console.log("🔍 Fetching balances for:", address);
+        console.log("🔍 Fetching EVM balances for:", address);
         try {
-          const data = await getEvmBalances(address);
-          console.log("💰 Final EVM Balances:", data);
+          const evmData = await getEvmBalances(address);
+          console.log("💰 Final EVM Balances:", evmData);
         } catch (err) {
-          console.warn("❌ Balance fetch error:", err?.message || err);
+          console.warn("❌ EVM balance fetch error:", err?.message || err);
+        }
+      })();
+    }
+  }, [isConnected, address]);
+
+  // 💰 Fetch balances silently after wallet connects (Solana)
+  useEffect(() => {
+    if (isConnected && address) {
+      (async () => {
+        console.log("🔍 Fetching Solana balances for:", address);
+        try {
+          const solData = await getSolanaBalances(address);
+          console.log("💰 Final Solana Balances:", solData);
+        } catch (err) {
+          console.warn("❌ Solana balance fetch error:", err?.message || err);
         }
       })();
     }
