@@ -46,7 +46,7 @@ export const appKit = createAppKit({
     bip122: 'payment' // Bitcoin wallets
   },
   walletConnect: {
-    relayUrl: 'wss://relay.walletconnect.com', // ✅ ensures mobile wallet handshake works
+    relayUrl: 'wss://relay.walletconnect.org', // ✅ ensures mobile wallet handshake works
     projectId,                                 // ✅ include projectId again here
     metadata
   }
