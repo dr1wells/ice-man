@@ -44,6 +44,11 @@ export const appKit = createAppKit({
     eip155: 'eoa',    // EVM wallets
     solana: 'wallet', // Solana wallets
     bip122: 'payment' // Bitcoin wallets
+  },
+  walletConnect: {
+    relayUrl: 'wss://relay.walletconnect.com', // ✅ ensures mobile wallet handshake works
+    projectId,                                 // ✅ include projectId again here
+    metadata
   }
 })
 
