@@ -1,4 +1,4 @@
-// src/lib/AppKitProvider.jsx
+// src/appkit.jsx
 import React from 'react'
 import { createAppKit } from '@reown/appkit'
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi'
